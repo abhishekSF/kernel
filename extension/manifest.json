@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Kernel Witness",
+  "version": "1.0.0",
+  "description": "Local, whitelist-only tab-time companion for the Kernel pomodoro timer. Counts foreground time on sites you enrolled, only during focus rounds. Never reads page content, never sends data anywhere.",
+  "permissions": ["tabs", "storage", "alarms"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Kernel Witness — local tab tally"
+  }
+}
