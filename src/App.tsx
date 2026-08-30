@@ -151,6 +151,10 @@ export default function App() {
 
   /* ---------- session lifecycle ---------- */
 
+  // Set by handleSessionEnd when a focus round ends; read by the witness
+  // segment effect, which runs after the mode has already transitioned.
+  const focusEndRef = useRef<{ completed: boolean } | null>(null);
+
   const handleSessionEnd = useCallback(
     (mode: Mode, reason: EndReason): Transition => {
       const s = settingsRef.current;
@@ -158,6 +162,7 @@ export default function App() {
       let next: Mode;
 
       if (mode === "focus") {
+        focusEndRef.current = { completed: reason === "complete" };
         const newCount = statsRef.current.day.focusCount + 1;
         next = reason === "skip" ? "short" : newCount % s.longEvery === 0 ? "long" : "short";
       } else {
@@ -254,11 +259,17 @@ export default function App() {
       segRef.current = null;
       bridgeSend({ type: "session-end", payload: { sessionId: id } });
 
-      const elapsedSec = Math.max(
-        0,
-        Math.round((totalRef.current - remainRef.current) / 1000)
-      );
-      const completed = remainRef.current <= 0;
+      // On complete/skip the mode has already advanced, so the timer refs
+      // describe the next session; fall back to the finished focus duration.
+      // On pause (no end recorded) the refs still hold this round.
+      const end = focusEndRef.current;
+      focusEndRef.current = null;
+      const completed = end?.completed ?? false;
+      const elapsedSec = end
+        ? completed
+          ? Math.round(minutesFor(settingsRef.current, "focus") * 60)
+          : 0
+        : Math.max(0, Math.round((totalRef.current - remainRef.current) / 1000));
       const chipPid = activeProjectRef.current;
 
       const timerId = window.setTimeout(() => {
@@ -317,7 +328,9 @@ export default function App() {
     if (!linked) return;
     bridgeSend({
       type: "sync",
-      payload: projects.map((p) => ({ id: p.id, name: p.name, url: p.url })),
+      payload: {
+        whitelist: projects.map((p) => ({ id: p.id, name: p.name, url: p.url })),
+      },
     });
   }, [linked, projects]);
 
