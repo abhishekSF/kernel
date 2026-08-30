@@ -14,22 +14,21 @@ interface HourglassProps {
 
 const FLOOR_Y = 376;
 
-const SAND = ["#f0c27e", "#e5b26b", "#d9a35a", "#c98f4a"];
-
-/* deterministic pseudo-random stream pixels */
-const SAND_PIXELS = Array.from({ length: 26 }, (_, i) => {
+/* deterministic pseudo-random stream of falling grains, kept fine and
+   near-centre so the pour reads as a single slick thread of sand */
+const GRAINS = Array.from({ length: 16 }, (_, i) => {
   const r1 = ((i * 37 + 11) % 17) / 17;
   const r2 = ((i * 53 + 7) % 13) / 13;
   const r3 = ((i * 29 + 5) % 19) / 19;
   const r4 = ((i * 71 + 3) % 23) / 23;
   return {
-    x: 125.5 + r1 * 9,
-    size: 1.7 + r2 * 1.8,
-    dur: 0.62 + r3 * 0.55,
-    delay: (i / 26) * 0.8 + r1 * 0.25,
-    drift: (r2 - 0.5) * 8,
-    opacity: 0.5 + r4 * 0.5,
-    color: SAND[i % SAND.length],
+    x: 130 + (r1 - 0.5) * 4.4,
+    r: 0.7 + r2 * 0.85,
+    dur: 0.55 + r3 * 0.5,
+    delay: (i / 16) * 0.72 + r1 * 0.22,
+    drift: (r2 - 0.5) * 6,
+    opacity: 0.55 + r4 * 0.45,
+    tint: ["var(--mode-bright)", "var(--mode)", "var(--mode-deep)"][i % 3],
   };
 });
 
@@ -59,7 +58,10 @@ function HourglassInner({
   } L 202 ${FLOOR_Y} Z`;
 
   const flowing = running && progress > 0.004 && progress < 0.996;
-  const streamEnd = Math.max(apexY + 2, 220);
+  const streamStart = 210;
+  const streamEnd = Math.max(apexY - 2, 224);
+  /* bottom pool glow brightens as sand collects */
+  const poolOpacity = 0.14 + progress * 0.5;
 
   /* flip the glass end-over-end whenever the session changes */
   const [flip, setFlip] = useState(0);
@@ -86,8 +88,8 @@ function HourglassInner({
       {/* soft ambient pool behind the glass */}
       <div
         aria-hidden
-        className="absolute inset-x-[-12%] inset-y-[4%] rounded-full opacity-60 transition-colors duration-700"
-        style={{ background: "radial-gradient(ellipse at center, var(--mode-soft) 0%, transparent 65%)" }}
+        className="absolute inset-x-[-12%] inset-y-[4%] rounded-full opacity-70 transition-colors duration-700"
+        style={{ background: "radial-gradient(ellipse at center, var(--mode-soft) 0%, transparent 68%)" }}
       />
 
       {/* mode label */}
@@ -114,7 +116,7 @@ function HourglassInner({
         <div className="hg-spin" style={{ transform: `rotate(${flip * 360}deg)` }}>
           <svg
             viewBox="0 0 260 420"
-            className="mx-auto w-[240px] sm:w-[264px]"
+            className={`mx-auto w-[240px] sm:w-[264px] ${flowing ? "hg-breathe" : ""}`}
             role="img"
             aria-label={`${MODE_META[mode].label} hourglass, ${formatClock(remainingMs)} remaining`}
           >
@@ -123,38 +125,93 @@ function HourglassInner({
                 <path d={glassPath} />
               </clipPath>
               <linearGradient id="hg-sand" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#e2ac67" />
-                <stop offset="100%" stopColor="#c8873f" />
+                <stop offset="0%" style={{ stopColor: "var(--mode-bright)" }} />
+                <stop offset="55%" style={{ stopColor: "var(--mode)" }} />
+                <stop offset="100%" style={{ stopColor: "var(--mode-deep)" }} />
               </linearGradient>
+              <linearGradient id="hg-glass-body" x1="0" y1="0" x2="0.35" y2="1">
+                <stop offset="0%" stopColor="rgba(238,243,236,0.10)" />
+                <stop offset="45%" stopColor="rgba(238,243,236,0.03)" />
+                <stop offset="100%" stopColor="rgba(238,243,236,0.06)" />
+              </linearGradient>
+              <linearGradient id="hg-rim" x1="0" y1="0" x2="0.6" y2="1">
+                <stop offset="0%" stopColor="rgba(255,255,255,0.55)" />
+                <stop offset="50%" stopColor="rgba(238,243,236,0.28)" />
+                <stop offset="100%" stopColor="rgba(238,243,236,0.16)" />
+              </linearGradient>
+              <radialGradient id="hg-pool" cx="0.5" cy="0.5" r="0.5">
+                <stop offset="0%" style={{ stopColor: "var(--mode)" }} stopOpacity="0.9" />
+                <stop offset="100%" style={{ stopColor: "var(--mode)" }} stopOpacity="0" />
+              </radialGradient>
+              <filter id="hg-soft" x="-40%" y="-40%" width="180%" height="180%">
+                <feGaussianBlur stdDeviation="7" />
+              </filter>
             </defs>
 
-            {/* frame: rails + caps */}
-            <rect x="57" y="34" width="3" height="352" rx="1.5" fill="rgba(238,243,236,0.14)" />
-            <rect x="200" y="34" width="3" height="352" rx="1.5" fill="rgba(238,243,236,0.14)" />
-            <rect x="44" y="22" width="172" height="13" rx="6.5" fill="rgba(238,243,236,0.16)" />
-            <rect x="44" y="385" width="172" height="13" rx="6.5" fill="rgba(238,243,236,0.16)" />
-            <circle cx="58.5" cy="28.5" r="2.2" fill="rgba(238,243,236,0.28)" />
-            <circle cx="201.5" cy="28.5" r="2.2" fill="rgba(238,243,236,0.28)" />
-            <circle cx="58.5" cy="391.5" r="2.2" fill="rgba(238,243,236,0.28)" />
-            <circle cx="201.5" cy="391.5" r="2.2" fill="rgba(238,243,236,0.28)" />
+            {/* pool glow beneath the collecting sand */}
+            <ellipse
+              cx="130"
+              cy={FLOOR_Y - 6}
+              rx="78"
+              ry="34"
+              fill="url(#hg-pool)"
+              filter="url(#hg-soft)"
+              opacity={poolOpacity}
+              style={{ transition: "opacity 0.6s ease" }}
+            />
+
+            {/* frame: slim posts + rounded caps */}
+            <rect x="57.5" y="36" width="2.4" height="348" rx="1.2" fill="rgba(238,243,236,0.16)" />
+            <rect x="200.1" y="36" width="2.4" height="348" rx="1.2" fill="rgba(238,243,236,0.16)" />
+            <rect x="46" y="24" width="168" height="12" rx="6" fill="rgba(238,243,236,0.14)" />
+            <rect x="46" y="384" width="168" height="12" rx="6" fill="rgba(238,243,236,0.14)" />
+            <rect x="46" y="24" width="168" height="4" rx="2" fill="rgba(255,255,255,0.12)" />
+            <rect x="46" y="384" width="168" height="4" rx="2" fill="rgba(255,255,255,0.10)" />
+
+            {/* glass body tint */}
+            <path d={glassPath} fill="url(#hg-glass-body)" />
 
             {/* sand, clipped inside the glass */}
             <g clipPath="url(#hg-glass-clip)">
               <path d={mound} fill="url(#hg-sand)" />
+              {/* mound crest highlight */}
+              {progress > 0.02 && (
+                <path
+                  d={`M 60 ${FLOOR_Y - 0.3 * h} Q 130 ${apexY} 200 ${FLOOR_Y - 0.3 * h}`}
+                  fill="none"
+                  stroke="var(--mode-bright)"
+                  strokeOpacity="0.55"
+                  strokeWidth="1.4"
+                />
+              )}
+
+              {/* faint continuous thread behind the grains */}
+              {flowing && (
+                <line
+                  x1="130"
+                  y1={streamStart}
+                  x2="130"
+                  y2={streamEnd}
+                  stroke="var(--mode-bright)"
+                  strokeOpacity="0.32"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              )}
+
+              {/* falling grains */}
               {flowing &&
-                SAND_PIXELS.map((g, i) => (
-                  <rect
+                GRAINS.map((g, i) => (
+                  <circle
                     key={i}
                     className="grain"
-                    x={g.x}
-                    y={215}
-                    width={g.size}
-                    height={g.size}
-                    fill={g.color}
-                    shapeRendering="crispEdges"
+                    cx={g.x}
+                    cy={streamStart}
+                    r={g.r}
                     style={
                       {
-                        "--fall": `${streamEnd - 215}px`,
+                        fill: g.tint,
+                        "--fall": `${streamEnd - streamStart}px`,
                         "--drift": `${g.drift}px`,
                         "--dur": `${g.dur}s`,
                         "--delay": `${g.delay}s`,
@@ -163,36 +220,40 @@ function HourglassInner({
                     }
                   />
                 ))}
+
               {/* top sand drawn last so the stream appears to leave it */}
               <path d={topSand} fill="url(#hg-sand)" />
               {/* surface highlight */}
               <path
                 d={`M 70 ${surfaceY + 1.5} Q 130 ${surfaceY + dip + 1.5} 190 ${surfaceY + 1.5}`}
                 fill="none"
-                stroke="rgba(255,235,200,0.35)"
+                stroke="rgba(255,245,225,0.5)"
                 strokeWidth="1.4"
               />
             </g>
 
+            {/* neck ring at the pinch */}
+            <rect x="122" y="205" width="16" height="10" rx="3" fill="none" stroke="rgba(238,243,236,0.22)" strokeWidth="1.2" />
+
             {/* glass outline + sheen */}
             <path
               d={glassPath}
-              fill="rgba(238,243,236,0.028)"
-              stroke="rgba(238,243,236,0.3)"
+              fill="none"
+              stroke="url(#hg-rim)"
               strokeWidth="2.4"
               strokeLinejoin="round"
             />
             <path
               d="M 78 62 C 78 120 112 140 120 178"
               fill="none"
-              stroke="rgba(255,255,255,0.12)"
+              stroke="rgba(255,255,255,0.16)"
               strokeWidth="3"
               strokeLinecap="round"
             />
             <path
               d="M 80 356 C 82 322 100 306 112 292"
               fill="none"
-              stroke="rgba(255,255,255,0.07)"
+              stroke="rgba(255,255,255,0.08)"
               strokeWidth="3"
               strokeLinecap="round"
             />

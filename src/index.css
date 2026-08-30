@@ -155,7 +155,7 @@ body::after {
 
 /* ---------------------------------------------------------------- hourglass */
 .hg-spin {
-  transition: transform 0.8s cubic-bezier(0.3, 1.18, 0.35, 1);
+  transition: transform 1.05s cubic-bezier(0.66, 0, 0.24, 1);
 }
 
 .hg-press {
@@ -163,6 +163,21 @@ body::after {
 }
 .hg-press:active {
   transform: scale(0.982);
+}
+
+@keyframes hg-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.014);
+  }
+}
+.hg-breathe {
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: hg-breathe 3.6s ease-in-out infinite;
 }
 
 @keyframes grain-fall {
@@ -272,6 +287,7 @@ body::after {
   }
   .hg-spin,
   .hg-press,
+  .hg-breathe,
   .fade-up {
     transition: none;
     animation: none;
