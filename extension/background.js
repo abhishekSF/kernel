@@ -138,6 +138,9 @@ function handleSync(msg) {
       url: String(w.url || ""),
     }));
     persist();
+    // Re-key against the new whitelist so a running session picks up a project
+    // that was enrolled after the current tab was last resolved.
+    resolveActiveTab();
   }
   if (typeof msg.payload?.enabled === "boolean") {
     state.enabled = msg.payload.enabled;
@@ -157,6 +160,9 @@ function handleSessionStart(msg) {
     otherMs: 0,
   };
   persist();
+  // The cached key can be stale (resolved before enrollment, or on a cold
+  // worker). Re-resolve the foreground tab so the opening span is keyed right.
+  resolveActiveTab();
 }
 
 function handleSessionEnd() {
