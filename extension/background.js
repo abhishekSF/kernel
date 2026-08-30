@@ -159,7 +159,7 @@ function handleSessionStart(msg) {
   persist();
 }
 
-function handleSessionEnd(msg) {
+function handleSessionEnd() {
   if (!state.session) return null;
   flushElapsed();
   const split = {};
@@ -265,7 +265,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ type: "ok" });
         break;
       case "session-end":
-        sendResponse({ type: "split", payload: handleSessionEnd(msg) });
+        sendResponse({ type: "split", payload: handleSessionEnd() });
         break;
       case "get-state":
         ensureDay();

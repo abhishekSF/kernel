@@ -160,7 +160,6 @@ export function usePomodoro(settings: Settings, onSessionEnd: SessionEndHandler)
       pendingRef.current = false;
       finishRef.current("complete", 0);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* tick — poll at 200ms for precise completion, but only push state

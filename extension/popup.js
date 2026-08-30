@@ -102,7 +102,7 @@ async function render() {
       name.textContent = w.name;
       const val = document.createElement("span");
       val.className = "val";
-      let host = "";
+      let host;
       try {
         host = new URL(/^https?:\/\//.test(w.url) ? w.url : `https://${w.url}`).hostname.replace(/^www\./, "");
       } catch {
