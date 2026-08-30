@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { DayStats, Project, formatMinutes, projectColor } from "../lib/pomo";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import { CloseIcon, LinkIcon, PlusIcon, TrashIcon } from "./icons";
 
 /* ---------------- picker chip (above Start button) ---------------- */
@@ -188,13 +189,15 @@ export function ProjectModal({ open, onClose, onCreate }: ModalProps) {
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
   const nameRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useFocusTrap(open, dialogRef, nameRef);
 
   useEffect(() => {
     if (open) {
       setName("");
       setUrl("");
       setError("");
-      window.setTimeout(() => nameRef.current?.focus(), 60);
     }
   }, [open]);
 
@@ -229,6 +232,7 @@ export function ProjectModal({ open, onClose, onCreate }: ModalProps) {
         onClick={onClose}
       />
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Add a side project"

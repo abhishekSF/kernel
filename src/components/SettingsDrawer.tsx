@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { DEFAULT_SETTINGS, Settings, clamp } from "../lib/pomo";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import { CloseIcon } from "./icons";
 
 interface FieldProps {
@@ -115,6 +116,16 @@ interface SettingsDrawerProps {
 
 export function SettingsDrawer({ open, settings, onSave, onClose }: SettingsDrawerProps) {
   const [draft, setDraft] = useState<Settings>(settings);
+  const asideRef = useRef<HTMLElement>(null);
+
+  useFocusTrap(open, asideRef);
+
+  // The panel stays mounted and slides off-screen, so mark it inert while
+  // closed to keep its controls out of the tab order and the a11y tree.
+  useLayoutEffect(() => {
+    const el = asideRef.current;
+    if (el) el.inert = !open;
+  }, [open]);
 
   useEffect(() => {
     if (open) setDraft(settings);
@@ -143,10 +154,13 @@ export function SettingsDrawer({ open, settings, onSave, onClose }: SettingsDraw
       />
       {/* panel */}
       <aside
+        ref={asideRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Timer settings"
         className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-[400px] flex-col border-l border-cream/10 bg-pine-900 shadow-2xl transition-transform duration-400 ease-[cubic-bezier(0.22,1,0.36,1)] ${
           open ? "translate-x-0" : "translate-x-full"
         }`}
-        aria-hidden={!open}
       >
         <div className="flex items-center justify-between border-b border-cream/8 px-6 py-5">
           <div>
