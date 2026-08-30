@@ -11,6 +11,8 @@
  *  - All state lives in chrome.storage.local. No network access of any kind.
  */
 
+import { matchProject } from "./witness-core.js";
+
 const KEY = "kernel-witness-v1";
 const MAX_GAP_MS = 24 * 60 * 60 * 1000; // never credit more than a day at once
 
@@ -54,31 +56,6 @@ function persist() {
 
 /* ---------------- URL whitelist matching ---------------- */
 
-function normalize(raw) {
-  try {
-    const u = new URL(raw);
-    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
-    return {
-      host: u.hostname.replace(/^www\./, "").toLowerCase(),
-      path: u.pathname.replace(/\/+$/, ""),
-    };
-  } catch {
-    return null;
-  }
-}
-
-/** Returns the enrolled project id for a tab URL, or null. */
-function matchProject(tabUrl) {
-  const n = normalize(tabUrl);
-  if (!n) return null;
-  for (const w of state.whitelist) {
-    const wn = normalize(w.url);
-    if (!wn || wn.host !== n.host) continue;
-    if (!wn.path || n.path.startsWith(wn.path)) return w.id;
-  }
-  return null;
-}
-
 async function keyForTab(tabId, knownUrl) {
   let url = knownUrl;
   if (!url) {
@@ -89,7 +66,7 @@ async function keyForTab(tabId, knownUrl) {
     }
   }
   if (!url) return "away";
-  return matchProject(url) ?? "other";
+  return matchProject(state.whitelist, url) ?? "other";
 }
 
 /* ---------------- session accounting ---------------- */
