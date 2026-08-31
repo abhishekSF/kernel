@@ -42,6 +42,7 @@ function setLinked(v: boolean) {
 }
 
 window.addEventListener("message", (e) => {
+  if (e.source !== window || e.origin !== window.location.origin) return;
   const d = e.data as { k?: string; msg?: BridgeMsg } | null;
   if (!d || d.k !== EXT_KEY || !d.msg) return;
   const msg = d.msg;
@@ -55,7 +56,7 @@ window.addEventListener("message", (e) => {
 
 /** Send a message toward the extension (relayed by the content script). */
 export function bridgeSend(msg: BridgeMsg) {
-  window.postMessage({ k: PAGE_KEY, msg }, "*");
+  window.postMessage({ k: PAGE_KEY, msg }, window.location.origin);
 }
 
 export function isLinked(): boolean {

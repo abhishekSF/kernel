@@ -11,6 +11,8 @@
  *  - All state lives in chrome.storage.local. No network access of any kind.
  */
 
+import { matchProject } from "./witness-core.js";
+
 const KEY = "kernel-witness-v1";
 const MAX_GAP_MS = 24 * 60 * 60 * 1000; // never credit more than a day at once
 
@@ -25,6 +27,10 @@ const DEFAULT_STATE = {
 };
 
 let state = structuredClone(DEFAULT_STATE);
+
+/* resolves once storage has rehydrated `state`; every listener waits on it
+   so a cold-worker wake can't mutate (and persist over) the default state */
+let ready;
 
 /* ephemeral (in-memory) mirror of the active tab */
 const mem = { tabId: null, urlKey: "away" };
@@ -50,31 +56,6 @@ function persist() {
 
 /* ---------------- URL whitelist matching ---------------- */
 
-function normalize(raw) {
-  try {
-    const u = new URL(raw);
-    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
-    return {
-      host: u.hostname.replace(/^www\./, "").toLowerCase(),
-      path: u.pathname.replace(/\/+$/, ""),
-    };
-  } catch {
-    return null;
-  }
-}
-
-/** Returns the enrolled project id for a tab URL, or null. */
-function matchProject(tabUrl) {
-  const n = normalize(tabUrl);
-  if (!n) return null;
-  for (const w of state.whitelist) {
-    const wn = normalize(w.url);
-    if (!wn || wn.host !== n.host) continue;
-    if (!wn.path || n.path.startsWith(wn.path)) return w.id;
-  }
-  return null;
-}
-
 async function keyForTab(tabId, knownUrl) {
   let url = knownUrl;
   if (!url) {
@@ -85,7 +66,7 @@ async function keyForTab(tabId, knownUrl) {
     }
   }
   if (!url) return "away";
-  return matchProject(url) ?? "other";
+  return matchProject(state.whitelist, url) ?? "other";
 }
 
 /* ---------------- session accounting ---------------- */
@@ -157,6 +138,9 @@ function handleSync(msg) {
       url: String(w.url || ""),
     }));
     persist();
+    // Re-key against the new whitelist so a running session picks up a project
+    // that was enrolled after the current tab was last resolved.
+    resolveActiveTab();
   }
   if (typeof msg.payload?.enabled === "boolean") {
     state.enabled = msg.payload.enabled;
@@ -176,9 +160,12 @@ function handleSessionStart(msg) {
     otherMs: 0,
   };
   persist();
+  // The cached key can be stale (resolved before enrollment, or on a cold
+  // worker). Re-resolve the foreground tab so the opening span is keyed right.
+  resolveActiveTab();
 }
 
-function handleSessionEnd(msg) {
+function handleSessionEnd() {
   if (!state.session) return null;
   flushElapsed();
   const split = {};
@@ -222,10 +209,12 @@ async function resolveActiveTab() {
 }
 
 chrome.tabs.onActivated.addListener(async () => {
+  await ready;
   await resolveActiveTab();
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, info) => {
+  await ready;
   if (info.url && tabId === mem.tabId) {
     mem.urlKey = await keyForTab(tabId, info.url);
     if (state.session) {
@@ -237,6 +226,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, info) => {
 });
 
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
+  await ready;
   if (windowId === chrome.windows.WINDOW_ID_NONE) {
     if (state.session) {
       flushElapsed();
@@ -252,7 +242,8 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
 /* ---------------- alarms (heartbeat) ---------------- */
 
 chrome.alarms.create("tick", { periodInMinutes: 1 });
-chrome.alarms.onAlarm.addListener((a) => {
+chrome.alarms.onAlarm.addListener(async (a) => {
+  await ready;
   if (a.name === "tick" && state.session) {
     flushElapsed();
     persist();
@@ -263,41 +254,44 @@ chrome.alarms.onAlarm.addListener((a) => {
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg || typeof msg.type !== "string") return;
-  if (msg.type === "ping" || msg.type === "hello") {
-    sendResponse({ type: "pong" });
-    return;
-  }
-  if (msg.type === "sync") {
-    handleSync(msg);
-    sendResponse({ type: "ok" });
-    return;
-  }
-  if (msg.type === "session-start") {
-    handleSessionStart(msg);
-    sendResponse({ type: "ok" });
-    return;
-  }
-  if (msg.type === "session-end") {
-    const split = handleSessionEnd(msg);
-    sendResponse({ type: "split", payload: split });
-    return;
-  }
-  if (msg.type === "get-state") {
-    ensureDay();
-    sendResponse({ type: "state", payload: state });
-    return;
-  }
-  if (msg.type === "wipe") {
-    state = structuredClone(DEFAULT_STATE);
-    persist();
-    sendResponse({ type: "ok" });
-    return;
-  }
+  // Serialize behind boot() so a message that lands before storage has
+  // rehydrated can't act on — and then persist — a fresh default state.
+  ready.then(() => {
+    switch (msg.type) {
+      case "ping":
+      case "hello":
+        sendResponse({ type: "pong" });
+        break;
+      case "sync":
+        handleSync(msg);
+        sendResponse({ type: "ok" });
+        break;
+      case "session-start":
+        handleSessionStart(msg);
+        sendResponse({ type: "ok" });
+        break;
+      case "session-end":
+        sendResponse({ type: "split", payload: handleSessionEnd() });
+        break;
+      case "get-state":
+        ensureDay();
+        sendResponse({ type: "state", payload: state });
+        break;
+      case "wipe":
+        state = structuredClone(DEFAULT_STATE);
+        persist();
+        sendResponse({ type: "ok" });
+        break;
+      default:
+        sendResponse(undefined);
+    }
+  });
+  return true; // reply asynchronously once boot() settles
 });
 
 /* ---------------- boot ---------------- */
 
-(async () => {
+async function boot() {
   await load();
   ensureDay();
   if (state.session) {
@@ -305,4 +299,5 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     persist();
   }
   await resolveActiveTab();
-})();
+}
+ready = boot();

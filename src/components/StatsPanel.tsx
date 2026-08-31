@@ -16,9 +16,10 @@ import { ClockIcon, CoffeeIcon, FlameIcon, MoonIcon, TargetIcon } from "./icons"
 /* animated integer */
 function useCountUp(value: number, duration = 550) {
   const [display, setDisplay] = useState(value);
-  const fromRef = useRef(value);
+  const displayRef = useRef(value);
+  displayRef.current = display;
   useEffect(() => {
-    const from = fromRef.current;
+    const from = displayRef.current;
     if (from === value) return;
     let raf = 0;
     const startT = performance.now();
@@ -27,7 +28,6 @@ function useCountUp(value: number, duration = 550) {
       const eased = 1 - Math.pow(1 - p, 3);
       setDisplay(Math.round(from + (value - from) * eased));
       if (p < 1) raf = requestAnimationFrame(step);
-      else fromRef.current = value;
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
