@@ -119,6 +119,8 @@ function Toggle({
   );
 }
 
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
 const DATA_BTN =
   "rounded-full border border-cream/12 px-3.5 py-2 text-[11.5px] font-bold uppercase tracking-[0.1em] text-mist-400 transition-all hover:border-cream/25 hover:text-cream active:scale-[0.97]";
 
@@ -302,8 +304,8 @@ export function SettingsDrawer({
                 {pendingImport.exportedAt
                   ? ` from ${new Date(pendingImport.exportedAt).toLocaleString()}`
                   : ""}
-                ? It has {pendingImport.stats.history.length} archived days and{" "}
-                {pendingImport.projects.length} projects.
+                ? It holds {plural(pendingImport.stats.history.length, "day")} of focus
+                history and {plural(pendingImport.projects.length, "project")}.
               </p>
               <div className="mt-2.5 flex gap-2">
                 <button

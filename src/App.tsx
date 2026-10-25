@@ -230,7 +230,7 @@ export default function App() {
             msg = "Full cycle complete — a long break is earned";
             pushToast(msg, "long");
           } else {
-            msg = `Focus round done — ${durMin} minutes banked`;
+            msg = `Focus round done — ${durMin} minute${durMin === 1 ? "" : "s"} banked`;
             pushToast(msg, "focus");
           }
         } else {
