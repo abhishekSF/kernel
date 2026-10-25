@@ -28,9 +28,7 @@ A local-only companion extension for the Kernel pomodoro app. It measures which 
 1. Copy this `extension/` folder somewhere stable on your machine.
 2. Open `chrome://extensions` and toggle Developer mode (top right).
 3. Click Load unpacked, then select the `extension/` folder.
-4. Open Kernel (for example, double-click `dist/index.html` or serve the folder). The header dot turns mint, which means Witness linked.
-
-> Note on file:// pages. If you open Kernel straight from disk, also enable Allow access to file URLs on the extension card in `chrome://extensions`. Serving the folder (`npx serve dist`) skips this.
+4. Open Kernel from a local server (`npm run dev`, `npm run preview`, or `npx serve dist`) or wherever you host it. The header dot turns mint, which means Witness linked.
 
 ## How it works
 

@@ -789,9 +789,6 @@ function TrackingModal({ linked, onClose }: { linked: boolean; onClose: () => vo
             <li>Open <span className="font-mono text-[12px] text-cream">chrome://extensions</span> and enable Developer mode.</li>
             <li>Click “Load unpacked” and select that folder.</li>
             <li>Reload Kernel — this dot turns mint, and rounds start measuring.</li>
-            <li className="list-none pl-0 text-[12px] text-mist-600">
-              Opening Kernel straight from disk? Enable <span className="font-mono">Allow access to file URLs</span> on the extension card too.
-            </li>
           </ol>
         </div>
 
