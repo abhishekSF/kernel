@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { EndReason, Transition, usePomodoro } from "./hooks/usePomodoro";
 import {
+  HISTORY_DAYS,
   MODE_META,
   MODE_ORDER,
   Mode,
   Project,
   Settings,
+  eraseAllData,
   formatClock,
   formatMinutes,
   loadActiveProject,
@@ -14,6 +16,7 @@ import {
   loadStats,
   minutesFor,
   playChime,
+  requestPersistentStorage,
   saveActiveProject,
   saveProjects,
   saveSettings,
@@ -22,6 +25,14 @@ import {
   todayKey,
   uid,
 } from "./lib/pomo";
+import {
+  Backup,
+  buildBackup,
+  downloadText,
+  historyCsv,
+  restoreBackup,
+} from "./lib/backup";
+import { notifySessionEnd } from "./lib/notify";
 import {
   SplitPayload,
   bridgeSend,
@@ -199,7 +210,7 @@ export default function App() {
             history = [
               ...history.filter((h) => h.date !== today),
               { date: today, focusSec: day.focusSec, focusCount: day.focusCount },
-            ].slice(-30);
+            ].slice(-HISTORY_DAYS);
           } else {
             day.breakCount += 1;
             day.breakSec += sec;
@@ -209,23 +220,38 @@ export default function App() {
 
         if (s.sound) playChime(mode === "focus" ? "focus" : "break");
 
+        let msg: string;
         if (mode === "focus") {
           const newCount = statsRef.current.day.focusCount + 1;
           if (newCount === s.dailyGoal) {
-            pushToast(`Daily goal reached — ${newCount} rounds of deep work`, "focus");
+            msg = `Daily goal reached — ${newCount} rounds of deep work`;
+            pushToast(msg, "focus");
           } else if (next === "long") {
-            pushToast("Full cycle complete — a long break is earned", "long");
+            msg = "Full cycle complete — a long break is earned";
+            pushToast(msg, "long");
           } else {
-            pushToast(`Focus round done — ${durMin} minutes banked`, "focus");
+            msg = `Focus round done — ${durMin} minutes banked`;
+            pushToast(msg, "focus");
           }
         } else {
-          pushToast("Break's over — back to the desk", "short");
+          msg = "Break's over — back to the desk";
+          pushToast(msg, "short");
+        }
+
+        if (s.notify) {
+          const willStart = next === "focus" ? s.autoStartFocus : s.autoStartBreaks;
+          const title =
+            mode === "focus" ? "Focus round complete" : `${MODE_META[mode].label} is over`;
+          const tail = willStart
+            ? `${MODE_META[next].label} has started.`
+            : `${MODE_META[next].label} is ready when you are.`;
+          notifySessionEnd(title, `${msg}. ${tail}`, s.sound);
         }
       } else {
         pushToast(next === "focus" ? "Skipped ahead to focus" : "Skipped ahead to a break", "info");
       }
 
-      return { next, autoStart: s.autoStart };
+      return { next, autoStart: next === "focus" ? s.autoStartFocus : s.autoStartBreaks };
     },
     [pushToast, witnessUsable]
   );
@@ -348,6 +374,30 @@ export default function App() {
   useEffect(() => saveStats(stats), [stats]);
   useEffect(() => saveProjects(projects), [projects]);
   useEffect(() => saveActiveProject(activeProjectId), [activeProjectId]);
+  useEffect(() => requestPersistentStorage(), []);
+
+  const exportBackup = () => {
+    const backup = buildBackup({ settings, stats, projects, activeProjectId });
+    downloadText(
+      `kernel-backup-${todayKey()}.json`,
+      JSON.stringify(backup, null, 2),
+      "application/json"
+    );
+  };
+
+  const exportCsv = () => {
+    downloadText(`kernel-history-${todayKey()}.csv`, historyCsv(stats), "text/csv");
+  };
+
+  const importBackup = (b: Backup) => {
+    restoreBackup(b);
+    window.location.reload();
+  };
+
+  const eraseEverything = () => {
+    eraseAllData();
+    window.location.reload();
+  };
 
   /* ---------- living document title ---------- */
 
@@ -652,6 +702,10 @@ export default function App() {
           saveSettings(next);
           pushToast("Settings saved", "info");
         }}
+        onExportBackup={exportBackup}
+        onExportCsv={exportCsv}
+        onImportBackup={importBackup}
+        onEraseAll={eraseEverything}
       />
 
       <ProjectModal
