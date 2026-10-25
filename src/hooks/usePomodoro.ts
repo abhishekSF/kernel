@@ -167,7 +167,7 @@ export function usePomodoro(settings: Settings, onSessionEnd: SessionEndHandler)
   useEffect(() => {
     if (!running) return;
     let lastSec = -1;
-    const id = window.setInterval(() => {
+    const tick = () => {
       const endAt = endAtRef.current;
       if (endAt == null) return;
       const rem = endAt - Date.now();
@@ -185,8 +185,23 @@ export function usePomodoro(settings: Settings, onSessionEnd: SessionEndHandler)
         setRemainingMs(rem);
         persist();
       }
-    }, 200);
-    return () => window.clearInterval(id);
+    };
+    const id = window.setInterval(tick, 200);
+    // Hidden tabs throttle repeating timers (Chrome batches them to once a
+    // minute after 5 min), which would make the chime late. A single
+    // unchained timeout aimed at endAt is only clamped to ~1s.
+    const endAt = endAtRef.current;
+    const deadline =
+      endAt != null ? window.setTimeout(tick, Math.max(0, endAt - Date.now()) + 20) : undefined;
+    const onVisible = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(id);
+      window.clearTimeout(deadline);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [running, persist, mode]);
 
   // persist on pause / mode change / duration change

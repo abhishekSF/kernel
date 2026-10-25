@@ -1,7 +1,16 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent } from "react";
 import { DEFAULT_SETTINGS, Settings, clamp } from "../lib/pomo";
+import { Backup, parseBackup } from "../lib/backup";
+import { NotifyPermission, notifyPermission, requestNotifyPermission } from "../lib/notify";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { CloseIcon } from "./icons";
+
+const NOTIFY_HINT: Record<NotifyPermission, string> = {
+  default: "A desktop alert when a round ends in a background tab",
+  granted: "A desktop alert when a round ends in a background tab",
+  denied: "Blocked by the browser. Allow notifications for this site in its address-bar settings.",
+  unsupported: "This browser doesn't support desktop notifications",
+};
 
 interface FieldProps {
   label: string;
@@ -75,11 +84,13 @@ function Toggle({
   label,
   hint,
   value,
+  disabled,
   onChange,
 }: {
   label: string;
   hint: string;
   value: boolean;
+  disabled?: boolean;
   onChange: (b: boolean) => void;
 }) {
   return (
@@ -87,8 +98,9 @@ function Toggle({
       type="button"
       role="switch"
       aria-checked={value}
+      disabled={disabled}
       onClick={() => onChange(!value)}
-      className="flex w-full items-center justify-between gap-4 py-3.5 text-left"
+      className="flex w-full items-center justify-between gap-4 py-3.5 text-left disabled:cursor-not-allowed disabled:opacity-60"
     >
       <div>
         <div className="text-sm font-bold text-cream">{label}</div>
@@ -107,15 +119,38 @@ function Toggle({
   );
 }
 
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+const DATA_BTN =
+  "rounded-full border border-cream/12 px-3.5 py-2 text-[11.5px] font-bold uppercase tracking-[0.1em] text-mist-400 transition-all hover:border-cream/25 hover:text-cream active:scale-[0.97]";
+
 interface SettingsDrawerProps {
   open: boolean;
   settings: Settings;
   onSave: (s: Settings) => void;
   onClose: () => void;
+  onExportBackup: () => void;
+  onExportCsv: () => void;
+  onImportBackup: (b: Backup) => void;
+  onEraseAll: () => void;
 }
 
-export function SettingsDrawer({ open, settings, onSave, onClose }: SettingsDrawerProps) {
+export function SettingsDrawer({
+  open,
+  settings,
+  onSave,
+  onClose,
+  onExportBackup,
+  onExportCsv,
+  onImportBackup,
+  onEraseAll,
+}: SettingsDrawerProps) {
   const [draft, setDraft] = useState<Settings>(settings);
+  const [permission, setPermission] = useState<NotifyPermission>(notifyPermission);
+  const [pendingImport, setPendingImport] = useState<Backup | null>(null);
+  const [importError, setImportError] = useState("");
+  const [confirmErase, setConfirmErase] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const asideRef = useRef<HTMLElement>(null);
 
   useFocusTrap(open, asideRef);
@@ -128,7 +163,13 @@ export function SettingsDrawer({ open, settings, onSave, onClose }: SettingsDraw
   }, [open]);
 
   useEffect(() => {
-    if (open) setDraft(settings);
+    if (open) {
+      setDraft(settings);
+      setPermission(notifyPermission());
+      setPendingImport(null);
+      setImportError("");
+      setConfirmErase(false);
+    }
   }, [open, settings]);
 
   useEffect(() => {
@@ -142,6 +183,29 @@ export function SettingsDrawer({ open, settings, onSave, onClose }: SettingsDraw
 
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) =>
     setDraft((d) => ({ ...d, [k]: v }));
+
+  const toggleNotify = async (on: boolean) => {
+    if (!on) {
+      set("notify", false);
+      return;
+    }
+    const result = await requestNotifyPermission();
+    setPermission(result);
+    set("notify", result === "granted");
+  };
+
+  const pickFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImportError("");
+    setPendingImport(null);
+    try {
+      setPendingImport(parseBackup(await file.text()));
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Couldn't read that file.");
+    }
+  };
 
   return (
     <>
@@ -192,8 +256,99 @@ export function SettingsDrawer({ open, settings, onSave, onClose }: SettingsDraw
 
           <div className="mt-6 text-[11px] font-bold uppercase tracking-[0.22em] text-mist-600">Behaviour</div>
           <div className="mt-1 divide-y divide-cream/6">
-            <Toggle label="Auto-start next session" hint="Roll straight into the next round" value={draft.autoStart} onChange={(b) => set("autoStart", b)} />
+            <Toggle label="Auto-start breaks" hint="Roll straight into a break when focus ends" value={draft.autoStartBreaks} onChange={(b) => set("autoStartBreaks", b)} />
+            <Toggle label="Auto-start focus" hint="Start the next focus round when a break ends" value={draft.autoStartFocus} onChange={(b) => set("autoStartFocus", b)} />
             <Toggle label="Completion chime" hint="A soft tone when a session ends" value={draft.sound} onChange={(b) => set("sound", b)} />
+            <Toggle
+              label="Desktop notification"
+              hint={NOTIFY_HINT[permission]}
+              value={draft.notify && permission === "granted"}
+              disabled={permission === "unsupported"}
+              onChange={(b) => void toggleNotify(b)}
+            />
+          </div>
+
+          <div className="mt-6 text-[11px] font-bold uppercase tracking-[0.22em] text-mist-600">Your data</div>
+          <p className="mt-2 text-[12px] leading-relaxed text-mist-500">
+            Everything lives in this browser. Exports are saved straight to your
+            device and nothing is uploaded. Clearing site data erases Kernel, so
+            keep a backup.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={onExportBackup} className={DATA_BTN}>
+              Export backup
+            </button>
+            <button type="button" onClick={onExportCsv} className={DATA_BTN}>
+              History CSV
+            </button>
+            <button type="button" onClick={() => fileRef.current?.click()} className={DATA_BTN}>
+              Import backup
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(e) => void pickFile(e)}
+              aria-label="Choose a Kernel backup file"
+            />
+          </div>
+
+          {importError && (
+            <p role="alert" className="mt-3 text-[12px] font-semibold text-ember">{importError}</p>
+          )}
+          {pendingImport && (
+            <div className="mt-3 rounded-2xl border border-cream/10 bg-pine-950/50 p-3.5">
+              <p className="text-[12.5px] leading-relaxed text-mist-300">
+                Replace everything here with this backup
+                {pendingImport.exportedAt
+                  ? ` from ${new Date(pendingImport.exportedAt).toLocaleString()}`
+                  : ""}
+                ? It holds {plural(pendingImport.stats.history.length, "day")} of focus
+                history and {plural(pendingImport.projects.length, "project")}.
+              </p>
+              <div className="mt-2.5 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => onImportBackup(pendingImport)}
+                  className="rounded-full px-3.5 py-2 text-[11.5px] font-extrabold uppercase tracking-[0.1em] text-[var(--mode-ink)]"
+                  style={{ backgroundColor: "var(--mode)" }}
+                >
+                  Replace my data
+                </button>
+                <button type="button" onClick={() => setPendingImport(null)} className={DATA_BTN}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-4 border-t border-cream/6 pt-4">
+            {confirmErase ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[12px] font-semibold text-ember">
+                  Erase all stats, projects and settings?
+                </span>
+                <button
+                  type="button"
+                  onClick={onEraseAll}
+                  className="rounded-full bg-ember px-3.5 py-2 text-[11.5px] font-extrabold uppercase tracking-[0.1em] text-[#2b100a]"
+                >
+                  Erase everything
+                </button>
+                <button type="button" onClick={() => setConfirmErase(false)} className={DATA_BTN}>
+                  Keep it
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmErase(true)}
+                className="text-[11.5px] font-bold uppercase tracking-[0.1em] text-mist-600 transition-colors hover:text-ember"
+              >
+                Erase all data…
+              </button>
+            )}
           </div>
         </div>
 

@@ -84,6 +84,24 @@ describe("usePomodoro", () => {
     expect(result.current.remainingMs).toBe(shortMs);
   });
 
+  it("completes as soon as a throttled background tab becomes visible", () => {
+    const onEnd = vi.fn(createHandler("short", false));
+    const { result } = renderHook(() => usePomodoro(DEFAULT_SETTINGS, onEnd));
+
+    act(() => {
+      result.current.toggle();
+    });
+    // Move the clock without firing any timers, as a frozen hidden tab would.
+    vi.setSystemTime(Date.now() + focusMs + 1_000);
+    expect(onEnd).not.toHaveBeenCalled();
+
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(onEnd).toHaveBeenCalledWith("focus", "complete", focusMs, 0);
+    expect(result.current.mode).toBe("short");
+  });
+
   it("skip ends the current session without waiting", () => {
     const onEnd = vi.fn(createHandler("long"));
     const { result } = renderHook(() => usePomodoro(DEFAULT_SETTINGS, onEnd));

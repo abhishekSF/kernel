@@ -6,8 +6,10 @@ export interface Settings {
   longMin: number;
   longEvery: number;
   dailyGoal: number;
-  autoStart: boolean;
+  autoStartBreaks: boolean;
+  autoStartFocus: boolean;
   sound: boolean;
+  notify: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -16,9 +18,13 @@ export const DEFAULT_SETTINGS: Settings = {
   longMin: 15,
   longEvery: 4,
   dailyGoal: 8,
-  autoStart: false,
+  autoStartBreaks: false,
+  autoStartFocus: false,
   sound: true,
+  notify: false,
 };
+
+export const HISTORY_DAYS = 365;
 
 export const MODE_ORDER: Mode[] = ["focus", "short", "long"];
 
@@ -119,7 +125,12 @@ function read<T>(key: string): T | null {
   }
 }
 
+// Set just before a wipe or restore reloads the page, so a late timer tick
+// or effect cannot write the old in-memory state back over the new data.
+let storageLocked = false;
+
 function write(key: string, value: unknown) {
+  if (storageLocked) return;
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {
@@ -141,18 +152,32 @@ const emptyDay = (date: string): DayStats => ({
   projects: {},
 });
 
-export function loadSettings(): Settings {
-  const s = read<Partial<Settings>>(KEYS.settings);
-  const merged = { ...DEFAULT_SETTINGS, ...(s ?? {}) };
-  return {
-    focusMin: clamp(merged.focusMin, 1, 120),
-    shortMin: clamp(merged.shortMin, 1, 60),
-    longMin: clamp(merged.longMin, 1, 90),
-    longEvery: clamp(merged.longEvery, 2, 8),
-    dailyGoal: clamp(merged.dailyGoal, 1, 24),
-    autoStart: !!merged.autoStart,
-    sound: !!merged.sound,
+type StoredSettings = Partial<Settings> & { autoStart?: boolean };
+
+export function normalizeSettings(s: StoredSettings | null): Settings {
+  const stored = s ?? {};
+  // v1 had a single autoStart flag; carry it over to both halves.
+  const legacy = typeof stored.autoStart === "boolean" ? stored.autoStart : undefined;
+  const merged = {
+    ...DEFAULT_SETTINGS,
+    ...(legacy !== undefined ? { autoStartBreaks: legacy, autoStartFocus: legacy } : {}),
+    ...stored,
   };
+  return {
+    focusMin: clamp(Number(merged.focusMin), 1, 120),
+    shortMin: clamp(Number(merged.shortMin), 1, 60),
+    longMin: clamp(Number(merged.longMin), 1, 90),
+    longEvery: clamp(Number(merged.longEvery), 2, 8),
+    dailyGoal: clamp(Number(merged.dailyGoal), 1, 24),
+    autoStartBreaks: !!merged.autoStartBreaks,
+    autoStartFocus: !!merged.autoStartFocus,
+    sound: !!merged.sound,
+    notify: !!merged.notify,
+  };
+}
+
+export function loadSettings(): Settings {
+  return normalizeSettings(read<StoredSettings>(KEYS.settings));
 }
 
 export function saveSettings(s: Settings) {
@@ -176,7 +201,7 @@ export function loadStats(): StatsStore {
         { date: day.date, focusSec: day.focusSec, focusCount: day.focusCount },
       ];
     }
-    history = history.slice(-30);
+    history = history.slice(-HISTORY_DAYS);
     log = [];
     day = emptyDay(today);
   }
@@ -230,11 +255,35 @@ export function loadActiveProject(): string | null {
 }
 
 export function saveActiveProject(id: string | null) {
+  if (storageLocked) return;
   try {
     if (id) localStorage.setItem(KEYS.activeProject, id);
     else localStorage.removeItem(KEYS.activeProject);
   } catch {
     /* non-fatal */
+  }
+}
+
+/** Blocks every later write until the page reloads. */
+export function lockStorage() {
+  storageLocked = true;
+}
+
+export function eraseAllData() {
+  try {
+    for (const key of Object.values(KEYS)) localStorage.removeItem(key);
+  } catch {
+    /* non-fatal */
+  }
+  lockStorage();
+}
+
+/** Ask the browser not to evict Kernel's storage under disk pressure. */
+export function requestPersistentStorage() {
+  try {
+    void navigator.storage?.persist?.().catch(() => {});
+  } catch {
+    /* unsupported */
   }
 }
 
