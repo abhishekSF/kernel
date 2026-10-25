@@ -109,6 +109,52 @@ describe("loadSettings", () => {
     expect(s.shortMin).toBe(1);
     expect(s.longEvery).toBe(2);
   });
+
+  it("migrates the old single auto-start flag to both halves", () => {
+    localStorage.setItem("kernel.settings.v1", JSON.stringify({ autoStart: true }));
+    const s = loadSettings();
+    expect(s.autoStartBreaks).toBe(true);
+    expect(s.autoStartFocus).toBe(true);
+    expect(s).not.toHaveProperty("autoStart");
+  });
+
+  it("prefers the new flags over the legacy one", () => {
+    localStorage.setItem(
+      "kernel.settings.v1",
+      JSON.stringify({ autoStart: true, autoStartFocus: false })
+    );
+    const s = loadSettings();
+    expect(s.autoStartBreaks).toBe(true);
+    expect(s.autoStartFocus).toBe(false);
+  });
+
+  it("keeps notifications off unless opted in", () => {
+    expect(loadSettings().notify).toBe(false);
+  });
+});
+
+describe("storage lock and erase", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("removes every Kernel key and blocks later writes", async () => {
+    vi.resetModules();
+    const fresh = await import("./pomo");
+    fresh.saveSettings({ ...fresh.DEFAULT_SETTINGS, focusMin: 40 });
+    fresh.saveActiveProject("p-1");
+    localStorage.setItem("unrelated", "keep");
+
+    fresh.eraseAllData();
+    expect(localStorage.getItem("kernel.settings.v1")).toBeNull();
+    expect(localStorage.getItem("kernel.activeProject.v1")).toBeNull();
+    expect(localStorage.getItem("unrelated")).toBe("keep");
+
+    fresh.saveSettings({ ...fresh.DEFAULT_SETTINGS, focusMin: 50 });
+    fresh.saveActiveProject("p-2");
+    expect(localStorage.getItem("kernel.settings.v1")).toBeNull();
+    expect(localStorage.getItem("kernel.activeProject.v1")).toBeNull();
+  });
 });
 
 describe("loadStats day rollover", () => {
